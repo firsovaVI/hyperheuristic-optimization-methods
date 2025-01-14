@@ -2,22 +2,33 @@ import numpy as np
 
 
 class HiddenMarkovModel:
-    def __init__(self, n_states, n_observations, transition_probs, emission_probs, initial_probs):
+    def __init__(self, n_states, n_observations):
         """
-        Инициализация скрытой марковской модели.
+        Инициализация скрытой марковской модели со случайными начальными параметрами.
 
         Args:
             n_states (int): Количество скрытых состояний.
             n_observations (int): Количество наблюдаемых состояний.
-            transition_probs (np.array): Матрица вероятностей переходов между скрытыми состояниями.
-            emission_probs (np.array): Матрица вероятностей излучения наблюдаемых состояний из скрытых.
-            initial_probs (np.array): Начальные вероятности скрытых состояний.
         """
         self.n_states = n_states
         self.n_observations = n_observations
-        self.transition_probs = transition_probs
-        self.emission_probs = emission_probs
-        self.initial_probs = initial_probs
+        self._init_random_parameters()
+
+    def _init_random_parameters(self):
+        """
+        Генерирует случайные начальные параметры модели.
+        """
+        # Случайные вероятности переходов
+        self.transition_probs = np.random.rand(self.n_states, self.n_states)
+        self.transition_probs /= self.transition_probs.sum(axis=1, keepdims=True)  # Нормализация
+
+        # Случайные вероятности излучения
+        self.emission_probs = np.random.rand(self.n_states, self.n_observations)
+        self.emission_probs /= self.emission_probs.sum(axis=1, keepdims=True)  # Нормализация
+
+        # Случайные начальные вероятности
+        self.initial_probs = np.random.rand(self.n_states)
+        self.initial_probs /= self.initial_probs.sum()  # Нормализация
 
     def _forward(self, observations):
         """
@@ -29,7 +40,6 @@ class HiddenMarkovModel:
           Returns:
               alpha (np.array): Матрица альфа.
         """
-
         T = len(observations)
         alpha = np.zeros((T, self.n_states))
 
@@ -80,7 +90,6 @@ class HiddenMarkovModel:
         Returns:
             best_path (np.array): Наиболее вероятная последовательность скрытых состояний.
         """
-
         T = len(observations)
         viterbi = np.zeros((T, self.n_states))
         backpointer = np.zeros((T, self.n_states), dtype=int)
@@ -101,51 +110,41 @@ class HiddenMarkovModel:
                         max_state = s_prev
                 viterbi[t, s] = max_prob * self.emission_probs[s, observations[t]]
                 backpointer[t, s] = max_state
+
         # Поиск наиболее вероятного последнего состояния
         best_last_state = np.argmax(viterbi[T - 1, :])
-
-        # Backtracking
         best_path = np.zeros(T, dtype=int)
         best_path[T - 1] = best_last_state
         for t in range(T - 2, -1, -1):
             best_path[t] = backpointer[t + 1, best_path[t + 1]]
-
         return best_path
 
-    def generate_sequence(self, length):
-        """Генерирует последовательность наблюдаемых состояний и соответствующих скрытых состояний."""
-        hidden_states = np.zeros(length, dtype=int)
-        observations = np.zeros(length, dtype=int)
-
-        # Выбираем начальное скрытое состояние согласно initial_probs
-        hidden_states[0] = np.random.choice(self.n_states, p=self.initial_probs)
-        observations[0] = np.random.choice(self.n_observations, p=self.emission_probs[hidden_states[0]])
-
-        # Генерируем последовательность состояний и наблюдений
-        for t in range(1, length):
-            hidden_states[t] = np.random.choice(self.n_states, p=self.transition_probs[hidden_states[t - 1]])
-            observations[t] = np.random.choice(self.n_observations, p=self.emission_probs[hidden_states[t]])
-        return hidden_states, observations
-
-    def decode(self, observations):
+    def _log_likelihood(self, observations):
         """
-        Декодирует последовательность наблюдаемых состояний в наиболее вероятную последовательность скрытых состояний.
-        """
-        return self._viterbi(observations)
+        Вычисляет логарифм правдоподобия последовательности наблюдений.
+        Args:
+            observations (np.array): последовательность наблюдаемых состояний
 
-    def fit(self, observations, max_iterations=100, tolerance=1e-5):
+        Returns:
+           (float): Логарифм правдоподобия.
+        """
+        alpha = self._forward(observations)
+        return np.log(np.sum(alpha[-1]))
+
+    def baum_welch(self, observations, max_iterations=100, tolerance=1e-5):
         """
           Обучает модель по последовательности наблюдений, используя алгоритм Баума-Велша.
           Args:
             observations (np.array): последовательность наблюдений
             max_iterations (int): максимальное количество итераций обучения
             tolerance (float): уровень допуска для сходимости
+          Returns:
+            log_likelihood (float): Логарифм правдоподобия.
         """
         observations = np.asarray(observations, dtype=int)
+        old_log_likelihood = float('-inf')
 
         for iteration in range(max_iterations):
-            old_log_likelihood = self._log_likelihood(observations)  # сохраняем log_likelihood до текущей итерации
-
             alpha = self._forward(observations)
             beta = self._backward(observations)
 
@@ -193,58 +192,35 @@ class HiddenMarkovModel:
                 break
             if iteration == max_iterations - 1:
                 print("Max iteration reached")
-
-    def _log_likelihood(self, observations):
-        """
-        Вычисляет логарифм правдоподобия последовательности наблюдений.
-        Args:
-            observations (np.array): последовательность наблюдаемых состояний
-
-        Returns:
-           (float): Логарифм правдоподобия.
-        """
-        alpha = self._forward(observations)
-        return np.log(np.sum(alpha[-1]))
+            old_log_likelihood = new_log_likelihood
+        return new_log_likelihood
 
 
-# Определяем параметры модели
-n_states = 2  # 0 - волки, 1 - лисы
-n_observations = 2  # 0 - зайцы, 1 - лани
+if __name__ == '__main__':
+    # Пример использования:
+    n_states = 2  # 0 - волки, 1 - лисы
+    n_observations = 2  # 0 - зайцы, 1 - лани
 
-# Матрица вероятностей переходов между хищниками (волк -> волк, волк -> лиса, и т.д.)
-transition_probs = np.array([
-    [0.7, 0.3],  # Волчица -> (волк, лиса)
-    [0.4, 0.6]  # Лиса -> (волк, лиса)
-])
+    hmm_model = HiddenMarkovModel(n_states, n_observations)
 
-# Матрица вероятностей излучения: какая добыча зависит от текущего хищника
-emission_probs = np.array([
-    [0.8, 0.2],  # Волк -> (заяц, лань)
-    [0.5, 0.5]  # Лиса -> (заяц, лань)
-])
+    # Генерируем последовательность
+    sequence_length = 20
+    # hidden_states, observations = hmm_model.generate_sequence(sequence_length)
+    observations = np.random.randint(0, n_observations, sequence_length)
 
-# Начальные вероятности хищников
-initial_probs = np.array([0.6, 0.4])  # волков и лис соответственно
+    # Названия
+    hidden_state_names = ["Волк", "Лиса"]
+    observation_names = ["Заяц", "Лань"]
 
-# Создаем экземпляр HMM
-hmm_model = HiddenMarkovModel(n_states, n_observations, transition_probs, emission_probs, initial_probs)
+    # Выводим результат
+    # print("Скрытые состояния (хищники):", [hidden_state_names[state] for state in hidden_states])
+    print("Наблюдаемые состояния (добыча):", [observation_names[obs] for obs in observations])
 
-# Генерируем последовательность
-sequence_length = 20
-hidden_states, observations = hmm_model.generate_sequence(sequence_length)
+    decoded_hidden_states = hmm_model._viterbi(observations)
+    print("Декодированные скрытые состояния (хищники):", [hidden_state_names[state] for state in decoded_hidden_states])
 
-# Названия
-hidden_state_names = ["Волк", "Лиса"]
-observation_names = ["Заяц", "Лань"]
-
-# Выводим результат
-print("Скрытые состояния (хищники):", [hidden_state_names[state] for state in hidden_states])
-print("Наблюдаемые состояния (добыча):", [observation_names[obs] for obs in observations])
-
-decoded_hidden_states = hmm_model.decode(observations)
-print("Декодированные скрытые состояния (хищники):", [hidden_state_names[state] for state in decoded_hidden_states])
-
-new_observations = np.array([0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0])
-hmm_model.fit(new_observations)
-new_decoded_states = hmm_model.decode(new_observations)
-print("Новая последовательность декодированных состояний", [hidden_state_names[state] for state in new_decoded_states])
+    new_observations = np.array([0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0])
+    hmm_model.baum_welch(new_observations)
+    new_decoded_states = hmm_model._viterbi(new_observations)
+    print("Новая последовательность декодированных состояний",
+          [hidden_state_names[state] for state in new_decoded_states])
