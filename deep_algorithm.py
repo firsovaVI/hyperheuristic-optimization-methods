@@ -1,9 +1,13 @@
 import numpy as np
-from deep_core import initialize_population, recombine, evaluate_population, select
-from adaptation import adapt_parameters
+from deep_core import initialize_population, recombine, evaluate_population, select, transform_u_to_q  # Убрана точка перед deep_core
+
+
+def adapt_parameters(F, crossover_prob, population, fitness):
+    pass
 
 
 def deep_algorithm(objective_function, param_bounds, pop_size=50, max_generations=100, F=0.5, crossover_prob=0.7):
+
     """
     Основной алгоритм DEEP.
 
