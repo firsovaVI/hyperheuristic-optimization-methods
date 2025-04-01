@@ -1,5 +1,7 @@
 # hyperheuristic-optimization-methods
-![image](https://github.com/user-attachments/assets/c11f8341-3e2d-4c48-92d9-bc1a820f6a08)
-![image](https://github.com/user-attachments/assets/5c655d2b-4951-4bf5-a002-ac5d3f5f5b5e)
-![image](https://github.com/user-attachments/assets/507b6a03-e84a-4795-8986-e1a792f65eb7)
+![image](https://github.com/user-attachments/assets/c2fc8e67-bab1-43a4-8051-18b45e0683f7)
+![image](https://github.com/user-attachments/assets/bb960cec-6955-43c7-b8cf-4a34a43d8e20)
+![image](https://github.com/user-attachments/assets/7587ce29-447f-4edf-b9b4-9ffc08891820)
+
+
 пример графиков одного запуска 
