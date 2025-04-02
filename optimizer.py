@@ -9,13 +9,15 @@ import os
 
 class HybridOptimizer:
     def __init__(self, objective_function, param_bounds, log_file="optimization_log.json"):
-        self.param_bounds = param_bounds  # Явно сохраняем param_bounds
+        self.param_bounds = param_bounds
         self.objective_function = lambda x: objective_function(transform_u_to_q(x, param_bounds))
-        self.hmm = HiddenMarkovModel(n_states=2, n_observations=2)
+        self.hmm = HiddenMarkovModel(n_states=2, n_observations=64)  # 8x8 combinations
         self.bandit = EpsilonGreedy(BernoulliBandit(4))
         self.current_method = 0
         self.log_file = log_file
         self.history = []
+        self.f_best_history = []
+        self.variance_history = []
 
         if os.path.exists(self.log_file):
             os.remove(self.log_file)
@@ -46,18 +48,27 @@ class HybridOptimizer:
             population = initialize_population(50, self.param_bounds)
             fitness = evaluate_population(population, self.objective_function)
 
-            observations = []
+            # Warm-up phase
+            for iteration in range(16):
+                new_population = recombine(population, 0.5, 0.7)
+                new_fitness = evaluate_population(new_population, self.objective_function)
+                population, fitness = select(population, new_population, fitness, new_fitness)
 
-            for iteration in range(max_iterations):
-                if iteration > 10:
-                    state_sequence = self.hmm.viterbi_algorithm(observations)
-                    self.current_method = state_sequence[-1]
-                else:
-                    self.current_method = np.random.randint(0, 2)
+                # Record history
+                self.f_best_history.append(np.min(fitness))
+                self.variance_history.append(np.var(population))
 
-                if self.current_method == 0:
+                self._save_iteration_data(iteration, population, fitness)
+
+            # Main optimization loop
+            for iteration in range(16, max_iterations):
+                # Predict next state
+                self.current_method = self.hmm.predict_next_state(self.current_method)
+
+                # Run optimization step
+                if self.current_method == 0:  # DEEP
                     new_population = recombine(population, 0.5, 0.7)
-                else:
+                else:  # Bandit
                     strategy_idx = self.bandit.run_one_step()
                     new_population = population.copy()
                     mask = np.random.rand(*new_population.shape) < 0.2
@@ -66,11 +77,15 @@ class HybridOptimizer:
                 new_fitness = evaluate_population(new_population, self.objective_function)
                 population, fitness = select(population, new_population, fitness, new_fitness)
 
-                reward = 1 if np.min(new_fitness) < np.min(fitness) - 1e-6 else 0
-                observations.append(reward)
+                # Update history
+                self.f_best_history.append(np.min(fitness))
+                self.variance_history.append(np.var(population))
 
-                if iteration % 20 == 0 and iteration > 0:
-                    self.hmm.update_model(self.current_method, reward)
+                # Update HMM with new observations
+                self.hmm.update_with_optimizer_data(
+                    np.array(self.f_best_history[-16:]),
+                    np.array(self.variance_history[-16:])
+                )
 
                 self._save_iteration_data(iteration, population, fitness)
 
@@ -81,8 +96,6 @@ class HybridOptimizer:
                           f"Fitness={fitness[best_idx]:.4f}")
 
             best_idx = np.argmin(fitness)
-            if len(fitness) == 0:
-                return np.zeros(len(self.param_bounds)), float('inf')
             return transform_u_to_q(population[best_idx], self.param_bounds), fitness[best_idx]
 
         except Exception as e:
