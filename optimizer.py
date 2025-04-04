@@ -11,8 +11,7 @@ class HybridOptimizer:
     def __init__(self, objective_function, param_bounds, log_file="optimization_log.json"):
         self.param_bounds = param_bounds
         self.objective_function = lambda x: objective_function(transform_u_to_q(x, param_bounds))
-        self.hmm = HiddenMarkovModel(n_states=2, n_observations=64)  # 8x8 combinations
-        self.bandit = EpsilonGreedy(BernoulliBandit(4))
+        self.hmm = HiddenMarkovModel(n_states=2, n_observations=8)  
         self.current_method = 0
         self.log_file = log_file
         self.history = []
