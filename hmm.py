@@ -22,9 +22,7 @@ class HiddenMarkovModel:
         self.initial_probs = np.ones(n_states) / n_states
         self.emission_probs = np.ones((n_states, self.n_observations)) / self.n_observations
 
-        # Для хранения статистики
-        self.emission_counts = np.ones((n_states, self.n_observations))
-        self.transition_counts = np.ones((n_states, n_states))
+
 
         # Фиксированная последовательность для обучения
         self._initialize_smooth_sequence()
@@ -34,6 +32,15 @@ class HiddenMarkovModel:
         self.state_history = []
         self.f_best_history = []
         self.variance_history = []
+        # Добавляем счетчики для накопления статистики
+        self.transition_counts = np.random.rand(n_states, n_states) + 0.1
+        self.emission_counts = np.random.rand(n_states, observation_levels ** 2) + 0.1
+
+        # Явно устанавливаем n_observations
+        self.n_observations = observation_levels ** 2
+
+        # Инициализируем state_sequence
+        self.state_sequence = []
 
     def _initialize_smooth_sequence(self):
         """Инициализация плавной последовательности для обучения"""
@@ -65,48 +72,62 @@ class HiddenMarkovModel:
         return min(int(obs), self.n_observations - 1)
 
     def update_emissions(self, observations):
-        """Обновление матрицы эмиссий с гарантированным увеличением счетчиков"""
+        """Обновление матрицы эмиссий с защитой от деления на ноль"""
         if len(observations) == 0:
             return
 
         # Получаем последовательность состояний
         states = self.viterbi_algorithm(observations)
-        self.state_history.extend(states)
+        self.state_sequence.extend(states)
 
-        # Гарантируем увеличение счетчиков
+        # Увеличиваем счетчики
         for s, o in zip(states, observations):
-            self.emission_counts[s, o] += 1.0  # Явное увеличение на 1
+            self.emission_counts[s, o] += 1.0
 
-        # Нормализация
-        self.emission_probs = self.emission_counts / self.emission_counts.sum(axis=1, keepdims=True)
+        # Нормализация с защитой от деления на ноль
+        sums = self.emission_counts.sum(axis=1, keepdims=True)
+        # Заменяем нулевые суммы на 1 (равномерное распределение)
+        sums[sums == 0] = 1
+        self.emission_probs = self.emission_counts / sums
+
+        # Для строк, где все счетчики были нулевые, устанавливаем равномерное распределение
+        zero_rows = np.where(self.emission_counts.sum(axis=1) == 0)[0]
+        for row in zero_rows:
+            self.emission_probs[row] = np.ones(self.n_observations) / self.n_observations
 
     def update_transitions(self, observations=None):
-        """Одна итерация обновления матрицы переходов с реальными изменениями"""
+        """Обновление матрицы переходов с гарантированными изменениями"""
         if observations is None:
             observations = self.fixed_obs_sequence
+        if len(observations) < 2:
+            return  # Недостаточно данных для обновления
 
+        # Вычисляем forward и backward вероятности
         alpha = self.forward_algorithm(observations)
         beta = self.backward_algorithm(observations)
 
-        # Вычисляем gamma и xi
+        # Вычисляем gamma и xi с защитой от underflow
         gamma = alpha * beta
-        gamma /= gamma.sum(axis=1, keepdims=True)
+        gamma = gamma / np.maximum(gamma.sum(axis=1, keepdims=True), 1e-10)
 
         xi = np.zeros((len(observations) - 1, self.n_states, self.n_states))
         for t in range(len(observations) - 1):
             xi[t] = alpha[t, :, None] * self.transition_probs * \
                     self.emission_probs[:, observations[t + 1]] * beta[t + 1]
-            xi[t] /= xi[t].sum()
+            xi[t] = xi[t] / np.maximum(xi[t].sum(), 1e-10)
 
-        # Значительно увеличиваем счетчики для реальных изменений
+        # Усиливаем эффект обновления (фиксированный коэффициент 10)
         for i in range(self.n_states):
             for j in range(self.n_states):
-                self.transition_counts[i, j] += np.sum(xi[:, i, j]) * 10  # Усиливаем эффект
+                self.transition_counts[i, j] += np.sum(xi[:, i, j]) * 10  # Фиксированный коэффициент
 
-        # Обновляем вероятности переходов
-        self.transition_probs = self.transition_counts / self.transition_counts.sum(axis=1, keepdims=True)
-        self.initial_probs = gamma[0]
+        # Обновляем вероятности с защитой
+        row_sums = self.transition_counts.sum(axis=1)
+        row_sums[row_sums == 0] = 1  # Защита от деления на 0
+        self.transition_probs = self.transition_counts / row_sums[:, None]
 
+        # Обновляем начальные вероятности
+        self.initial_probs = gamma[0] / gamma[0].sum()
 
     def update_with_optimizer_data(self, f_best_history, variance_history):
         """Основной метод обновления модели"""
