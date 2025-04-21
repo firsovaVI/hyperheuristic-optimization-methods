@@ -7,9 +7,11 @@ from matplotlib.gridspec import GridSpec
 
 
 def parabola_objective(x):
-    true_params = [2, -3, 5]  # Истинные параметры параболы (a, b, c)
-    return sum((x[i] - true_params[i]) ** 2 for i in range(3))
-
+    """Целевая функция, минимизирующая отклонение решения от данных"""
+    test_x = np.linspace(-5, 5, 20)
+    true_y = 2 * test_x**2 - 3 * test_x + 5
+    pred_y = x[0] * test_x**2 + x[1] * test_x + x[2]
+    return np.mean((pred_y - true_y)**2)
 
 def plot_optimization_history(log_file):
     """График истории оптимизации"""
