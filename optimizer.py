@@ -11,7 +11,8 @@ class HybridOptimizer:
     def __init__(self, objective_function, param_bounds, log_file="optimization_log.json"):
         self.param_bounds = param_bounds
         self.objective_function = lambda x: objective_function(transform_u_to_q(x, param_bounds))
-        self.hmm = HiddenMarkovModel(n_states=2, n_observations=8)  
+        self.hmm = HiddenMarkovModel(n_states=2, observation_levels=8)  # Стало (8x8=64)
+        self.bandit = EpsilonGreedy(BernoulliBandit(4))
         self.current_method = 0
         self.log_file = log_file
         self.history = []
@@ -100,3 +101,19 @@ class HybridOptimizer:
         except Exception as e:
             print(f"Error in optimize(): {e}")
             return np.zeros(len(self.param_bounds)), float('inf')
+
+
+def update_with_optimizer_data(self, f_best_history, variance_history):
+    """Обновление модели с данными оптимизатора"""
+    self.f_best_history = f_best_history
+    self.variance_history = variance_history
+
+    # Дискретизация наблюдений
+    observations = [self.discretize_observation(f, var)
+                    for f, var in zip(f_best_history, variance_history)]
+
+    # Обновляем только эмиссии (без переходов)
+    self.update_emissions(observations)
+
+    # Сохраняем наблюдения
+    self.observation_history.extend(observations)
